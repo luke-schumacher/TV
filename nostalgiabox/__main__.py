@@ -124,6 +124,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         prog="nostalgiabox",
         description="A retro TV media player for a Raspberry Pi nostalgia box.",
     )
+    parser.add_argument("--demo", action="store_true", help="try TV with an offline generated demo library (requires ffmpeg)")
     parser.add_argument("--no-ui", action="store_true", help="desktop playback without the optional Qt setup/settings UI")
     parser.add_argument("--settings", action="store_true", help="open the desktop settings panel at launch")
     parser.add_argument("--desktop", action="store_true", help="native mpv window controls (automatic on macOS)")
@@ -157,6 +158,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args(argv)
+    if args.demo and args.config:
+        parser.error("--demo uses its own config; omit --config")
 
     # The check report is the whole output. An INFO line about loading the
     # config would sit on top of it and look like a second error.
@@ -176,6 +179,16 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.list_audio:
         return _list_audio_devices(desktop=args.desktop or sys.platform == "darwin")
+
+    if args.demo:
+        from .demo import prepare_demo
+        try:
+            log.info("preparing the offline TV demo")
+            args.config = str(prepare_demo())
+            args.desktop = True
+        except (RuntimeError, OSError) as exc:
+            log.error("%s", exc)
+            return 1
 
     desktop = args.desktop or sys.platform == "darwin" or args.settings
     if desktop and not args.no_ui and not args.check and not args.dry_run:

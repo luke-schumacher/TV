@@ -2,6 +2,7 @@
 from __future__ import annotations
 import copy
 import sys
+import signal
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
@@ -447,9 +448,14 @@ class DesktopSession:
         else:
             self.show_settings(first_run=True)
         self.timer.start()
+        old_signals = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+        for sig in old_signals:
+            signal.signal(sig, lambda *_: self.qt.quit())
         try:
             return self.qt.exec()
         finally:
+            for sig, handler in old_signals.items():
+                signal.signal(sig, handler)
             self._shutdown = True
             self.timer.stop()
             self.service.close()

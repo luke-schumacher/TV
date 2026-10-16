@@ -49,6 +49,14 @@ TV/
 
 macOS automatically selects desktop mode; use `--desktop` on Linux. `-c /path/to/config.yaml` selects a different config. Existing configurations remain compatible. Desktop mode always disables host shutdown, selects software volume, and removes the Pi preload delay. A missing library opens setup; a disconnected drive shows a recoverable message with S to open settings; background scans detect additions and removals every ten seconds. Discovered channel numbers stay stable as folders are added. It does not install boot services or require input-device permissions.
 
+## Try it first
+
+```sh
+.venv/bin/nostalgiabox --demo
+```
+
+This generates three short test channels with quiet audio tones, using ffmpeg (`brew install ffmpeg` or `sudo apt install ffmpeg` if needed). Demo videos, settings, and bookmarks stay in a separate cache folder; your normal TV configuration is preserved. Press G for the guide, S for settings, and Q to quit.
+
 ## Controls
 
 Focus the TV window first. USB remotes that behave as keyboards work through the same window bindings.
