@@ -37,7 +37,7 @@ jobs:
           name: TV-${{ runner.os }}-python-${{ matrix.python }}
           path: dist/*
   desktop-bundle:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -47,8 +47,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Install Linux Qt runtime
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
       - run: python -m pip install '.[desktop,packaging]'
       - run: bash scripts/build-desktop.sh
+      - name: Smoke test packaged launcher
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            dist/TV.app/Contents/MacOS/TV --version
+          else
+            dist/TV/TV --version
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: TV-desktop-${{ runner.os }}-unsigned

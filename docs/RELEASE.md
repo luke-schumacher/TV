@@ -11,7 +11,7 @@ bash scripts/build-desktop.sh
 
 Wheel and sdist outputs go to `dist/`. The desktop bundler creates an unsigned native `TV.app` ZIP on macOS or an executable directory tarball on Linux. These bundles include Python/Qt and the retro font, but still require native mpv installed on the host. They are **not** notarized installers, Flatpaks, or AppImages. Build on each target platform/architecture; PyInstaller does not cross-compile.
 
-Normal CI builds wheel/sdist artifacts for every matrix entry. Manually run the Desktop compatibility workflow to build the optional unsigned desktop bundles. Do not publish an unsigned bundle as a signed Mac release.
+Normal CI builds wheel/sdist artifacts for every matrix entry. Main-branch pushes and manual runs of the Desktop compatibility workflow also build unsigned desktop bundles for Linux and macOS and smoke-test their launchers. Do not publish an unsigned bundle as a signed Mac release.
 
 ## Release gates
 
