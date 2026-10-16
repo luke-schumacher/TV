@@ -1,0 +1,16 @@
+# One subfolder per channel; use an absolute path or ~ for your home folder.
+media_root: ~/Movies/TV
+prefer_usb: false
+tune_in: resume
+start_offset: 0
+bridge_seconds: 0
+transition: none
+initial_volume: 70
+volume_control: pi
+power_off_on_min_volume: false
+crt:
+  enabled: true
+input:
+  keyboard: false
+  cec: false
+  stdin: false

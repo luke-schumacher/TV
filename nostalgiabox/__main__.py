@@ -87,8 +87,16 @@ def _find_config(
     )
 
 
-def _list_audio_devices() -> int:
+def _list_audio_devices(*, desktop=False) -> int:
     """Print mpv's available audio output devices, one 'name  -  description' per line."""
+    if desktop:
+        import shutil
+        import subprocess
+        binary = shutil.which("mpv")
+        if not binary:
+            print("Install mpv: brew install mpv (macOS); sudo apt install mpv (Debian/Ubuntu)")
+            return 1
+        return subprocess.run([binary, "--no-config", "--audio-device=help"], check=False).returncode
     try:
         import mpv  # type: ignore
     except ImportError:
@@ -116,6 +124,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         prog="nostalgiabox",
         description="A retro TV media player for a Raspberry Pi nostalgia box.",
     )
+    parser.add_argument("--desktop", action="store_true", help="native mpv window controls (automatic on macOS)")
+    parser.add_argument("--fullscreen", action="store_true", help="start the desktop window fullscreen; f toggles")
     parser.add_argument("-c", "--config", help="path to the YAML config file")
     parser.add_argument(
         "--dry-run",
@@ -163,7 +173,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return gen_main(["--assets-dir", str(DEFAULT_ASSETS_DIR)])
 
     if args.list_audio:
-        return _list_audio_devices()
+        return _list_audio_devices(desktop=args.desktop or sys.platform == "darwin")
 
     try:
         config_path = _find_config(args.config)
@@ -176,8 +186,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
 
     if args.check:
-        return _cmd_check(config, config_path)
+        return _cmd_check(config, config_path, desktop=args.desktop or sys.platform == "darwin")
 
+    desktop = args.desktop or sys.platform == "darwin"
     if not config.channels:
         if args.dry_run:
             print(no_shows_advice(config))
@@ -198,14 +209,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     from .app import run_from_config
 
     try:
-        run_from_config(config, dry_run=args.dry_run)
+        run_from_config(config, dry_run=args.dry_run, desktop=desktop, fullscreen=args.fullscreen)
     except RuntimeError as exc:
         log.error("%s", exc)
         return 1
     return 0
 
 
-def _cmd_check(config, config_path: Path) -> int:
+def _cmd_check(config, config_path: Path, *, desktop=False) -> int:
     """Validate key overrides, then print the full setup report."""
     from .input.keymap import parse_key_overrides
 
@@ -220,7 +231,7 @@ def _cmd_check(config, config_path: Path) -> int:
         print()
         print("Open config.yaml and fix key_overrides, then run: nostalgiabox --check")
         return 2
-    return run_check(config, config_path)
+    return run_check(config, config_path, desktop=desktop)
 
 
 def _announce_waiting(config) -> None:

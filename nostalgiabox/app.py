@@ -14,6 +14,8 @@ the whole thing (see ``step`` / ``handle_event`` / ``process_pending``).
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import logging
 import queue
 import subprocess
@@ -112,6 +114,8 @@ class TVApp:
         input_manager: Optional[InputManager] = None,
         dry_run: bool = False,
         assets_dir: Optional[Path] = None,
+        desktop: bool = False,
+        fullscreen: bool = False,
     ) -> "TVApp":
         """Build a fully wired app, creating real hardware backends by default.
 
@@ -119,6 +123,8 @@ class TVApp:
         backends (a stdin backend is added if a TTY is available), which is how
         the box can be exercised on a development machine.
         """
+        if desktop:
+            config = replace(config, power_off_on_min_volume=False, volume_control="pi", bridge_seconds=0)
         if player is None:
             if dry_run:
                 player = MockPlayer(verbose=True)
@@ -128,7 +134,13 @@ class TVApp:
 
                 assets = assets_dir or config.assets_dir or DEFAULT_ASSETS_DIR
                 shader_path = write_shader(config.crt)
-                player = MpvPlayer(
+                if desktop:
+                    from .desktop import DesktopPlayer
+                    factory = DesktopPlayer
+                else:
+                    factory = MpvPlayer
+                player = factory(
+                    fullscreen=fullscreen if desktop else True,
                     glsl_shaders=str(shader_path) if shader_path else None,
                     fonts_dir=assets / "fonts",
                     force_4_3=config.force_4_3,
@@ -138,10 +150,14 @@ class TVApp:
         if input_manager is None:
             if dry_run:
                 backends = create_backends({"keyboard": False, "cec": False, "stdin": True})
+            elif desktop:
+                backends = []  # Window input arrives over mpv IPC, never global evdev.
             else:
                 backends = create_backends(config.input_options)
             input_manager = InputManager(backends)
 
+        if desktop and not dry_run:
+            player.on_input = input_manager.put
         return cls(config, player, input_manager, assets_dir=assets_dir)
 
     # -- lifecycle ----------------------------------------------------------
@@ -186,6 +202,9 @@ class TVApp:
         Handles overlay expiry, channel-entry timeouts, finished episodes, and
         at most one queued input event.
         """
+        poll = getattr(self.player, "poll_events", None)
+        if poll is not None:
+            poll()
         now = self._clock()
         self._resolve_volume_mode()
         self._maybe_checkpoint(now)
@@ -570,7 +589,8 @@ class TVApp:
         return self._resolve_asset(filename)
 
 
-def run_from_config(config: Config, *, dry_run: bool = False) -> None:
+def run_from_config(config: Config, *, dry_run: bool = False, desktop: bool = False,
+                    fullscreen: bool = False) -> None:
     """Convenience entry point used by the CLI."""
     if not config.channels:
         root = config.media_root or "/media/nostalgiabox"
@@ -578,7 +598,7 @@ def run_from_config(config: Config, *, dry_run: bool = False) -> None:
             "No show folders found. Put one folder per show in "
             f"{root} (the folder name is the channel name), then start again."
         )
-    app = TVApp.from_config(config, dry_run=dry_run)
+    app = TVApp.from_config(config, dry_run=dry_run, desktop=desktop, fullscreen=fullscreen)
     app.run()
 
 

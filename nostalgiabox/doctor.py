@@ -127,6 +127,7 @@ def run_check(
     package_dir: Optional[Path] = None,
     mount_source: Optional[Callable[[Path], Optional[str]]] = None,
     out: Optional[TextIO] = None,
+    desktop: bool = False,
 ) -> int:
     """Print the setup report and return 0 when the box is ready to play."""
     # Resolved at call time so tests can replace the probe functions.
@@ -158,8 +159,20 @@ def run_check(
     emit()
     _report_loose_files(config, total, emit, problems)
     _report_misplaced(config, package, emit, problems)
-    _report_tools(which, python_mpv, emit, problems)
+    if desktop:
+        emit("Desktop player")
+        if which("mpv"):
+            emit("  OK   mpv (" + which("mpv") + ")")
+        else:
+            emit("  FIX  Install mpv: brew install mpv (macOS); sudo apt install mpv (Debian/Ubuntu)")
+            problems.append("tools")
+    else:
+        _report_tools(which, python_mpv, emit, problems)
     emit()
+    if desktop:
+        emit("Desktop mode: no boot service or host shutdown required.")
+        emit("Fix the lines marked FIX above." if problems else "Ready. Start with: nostalgiabox --desktop")
+        return 1 if problems else 0
     status = service()
     _report_service(status, emit)
     emit()

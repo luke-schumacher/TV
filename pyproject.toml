@@ -23,7 +23,7 @@ dependencies = [
 # Everything needed to actually run on the Raspberry Pi against a TV.
 pi = [
     "python-mpv>=1.0.5",
-    "evdev>=1.6.1",
+    "evdev>=1.6.1; sys_platform == 'linux'",
 ]
 dev = [
     "pytest>=7.0",
@@ -37,3 +37,6 @@ include = ["nostalgiabox*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+nostalgiabox = ["assets/fonts/*.ttf", "assets/fonts/*.txt", "assets/*.md"]
