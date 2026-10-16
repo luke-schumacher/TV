@@ -82,8 +82,18 @@ def test_existing_library_has_visible_startup_before_background_scan(qt, tmp_pat
     path.write_text('media_root: /unused\n')
     session = DesktopSession(path)
     monkeypatch.setattr(session.service, 'scan', lambda _: Future())
-    QTimer.singleShot(80, qt.quit)
+    # Stop after an actual application tick, rather than racing a wall-clock
+    # deadline against slow native window initialization on hosted Macs.
+    watchdog = QTimer()
+    watchdog.setSingleShot(True)
+    watchdog.timeout.connect(qt.quit)
+    watchdog.start(5000)
+    observed = []
+    def finish_after_tick():
+        observed.append((session.loading.isVisible(), session._ticks))
+        qt.quit()
+    session.timer.timeout.connect(finish_after_tick)
     session.run()
-    assert session.loading is not None
-    assert session._ticks > 0
+    watchdog.stop()
+    assert observed and observed[0][0] and observed[0][1] > 0
     session.loading.accept()
