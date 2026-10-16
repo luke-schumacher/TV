@@ -13,6 +13,6 @@ are isolated and imported lazily. This makes the interesting logic fully
 testable on any machine, not just on the Pi in front of a TV.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = ["__version__"]

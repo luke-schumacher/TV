@@ -124,6 +124,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         prog="nostalgiabox",
         description="A retro TV media player for a Raspberry Pi nostalgia box.",
     )
+    parser.add_argument("--no-ui", action="store_true", help="desktop playback without the optional Qt setup/settings UI")
+    parser.add_argument("--settings", action="store_true", help="open the desktop settings panel at launch")
     parser.add_argument("--desktop", action="store_true", help="native mpv window controls (automatic on macOS)")
     parser.add_argument("--fullscreen", action="store_true", help="start the desktop window fullscreen; f toggles")
     parser.add_argument("-c", "--config", help="path to the YAML config file")
@@ -174,6 +176,21 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.list_audio:
         return _list_audio_devices(desktop=args.desktop or sys.platform == "darwin")
+
+    desktop = args.desktop or sys.platform == "darwin" or args.settings
+    if desktop and not args.no_ui and not args.check and not args.dry_run:
+        try:
+            from .gui import run_desktop
+        except ImportError:
+            log.error("Install the desktop UI with: python -m pip install '.[desktop]'; or use --no-ui")
+            return 1
+        try:
+            config_path = _find_config(args.config)
+        except ConfigError:
+            import os
+            root = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
+            config_path = root / "nostalgiabox" / "config.yaml"
+        return run_desktop(config_path, fullscreen=args.fullscreen, settings=args.settings)
 
     try:
         config_path = _find_config(args.config)

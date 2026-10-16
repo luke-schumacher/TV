@@ -90,6 +90,7 @@ def scan_episodes(
     recursive: bool = True,
     exclude: Sequence[str] = (),
     exclude_seasons: AbstractSet[int] = frozenset(),
+    cancelled=lambda: False,
 ) -> List[Path]:
     """Return a sorted list of episode files under ``root``.
 
@@ -107,9 +108,16 @@ def scan_episodes(
     exts = {e.lower() for e in extensions}
     patterns = [p.lower() for p in exclude]
     walker = root.rglob("*") if recursive else root.glob("*")
+    def visible_files():
+        for p in walker:
+            if cancelled():
+                break
+            if any(part.startswith(".") for part in p.relative_to(root).parts):
+                continue
+            yield p
     episodes = [
         p
-        for p in walker
+        for p in visible_files()
         if p.is_file()
         and p.suffix.lower() in exts
         and not p.name.startswith(".")
@@ -195,8 +203,11 @@ class Channel:
         start_offset_max: Optional[float] = None,
         rng: Optional[random.Random] = None,
         bookmark: Optional[ChannelBookmark] = None,
+        duration_lookup=None,
     ) -> None:
         self.config = config
+        self._duration_lookup = duration_lookup or probe_duration
+        self.cached_duration = duration_lookup or (lambda path: None)
         self.episodes: List[Path] = list(episodes)
         self.tune_in_mode = tune_in
         # Start each episode a random number of seconds in (within this range) so
@@ -317,9 +328,10 @@ class Channel:
         """Decide what to play when the current episode ends naturally."""
         if self.is_empty:
             return None
-        if self.tune_in_mode == "broadcast" and self._broadcast is not None:
-            # Roll straight into whatever airs next in the running order.
-            return self._broadcast.at(time.time())
+        if self.tune_in_mode == "broadcast":
+            schedule = self._ensure_broadcast(epoch=self.broadcast_epoch if self.broadcast_epoch is not None else time.time())
+            if schedule is not None:
+                return schedule.at(time.time())
         if self._in_order:
             return self._advance_in_order()
         return self._next_shuffled()
@@ -372,7 +384,7 @@ class Channel:
             return None
         durations: List[float] = []
         for path in self.episodes:
-            dur = probe_duration(path)
+            dur = self._duration_lookup(path)
             durations.append(dur if dur else DEFAULT_EPISODE_SECONDS)
         # Use a channel-stable epoch offset so different channels are out of
         # phase with each other, but keep it deterministic per run.
@@ -470,13 +482,14 @@ def preview_episodes(
     return list(episodes[:count])
 
 
-def build_lineup(config: Config, *, rng: Optional[random.Random] = None) -> ChannelLineup:
+def build_lineup(config: Config, *, rng: Optional[random.Random] = None,
+                 episodes_by_path=None, duration_lookup=None) -> ChannelLineup:
     """Scan every configured channel folder and build the full lineup."""
     state = PlaybackState.load(config.state_file or default_state_path())
     base_rng = rng or random.Random(config.shuffle_seed)
     channels: List[Channel] = []
     for i, ch_cfg in enumerate(config.channels):
-        episodes = scan_episodes(
+        episodes = episodes_by_path[ch_cfg.path] if episodes_by_path is not None else scan_episodes(
             ch_cfg.path,
             config.video_extensions,
             recursive=config.scan_recursive,
@@ -504,6 +517,7 @@ def build_lineup(config: Config, *, rng: Optional[random.Random] = None) -> Chan
                 start_offset_max=config.start_offset_max,
                 rng=ch_rng,
                 bookmark=state.get(ch_cfg.path),
+                duration_lookup=duration_lookup,
             )
         )
     lineup = ChannelLineup(channels)

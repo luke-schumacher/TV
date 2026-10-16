@@ -16,7 +16,7 @@ from nostalgiabox.app import TVApp
 
 
 def test_missing_mpv_has_actionable_error(monkeypatch):
-    monkeypatch.setattr(shutil, "which", lambda _: None)
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
     with pytest.raises(RuntimeError, match="brew install mpv"):
         DesktopPlayer()
 
@@ -32,7 +32,7 @@ def test_window_keys_and_close_route_to_app_queue():
         {"event": "client-message", "args": ["tv-key", "KEY_UP"]},
         {"event": "client-message", "args": ["tv-key", "KEY_2"]},
         {"event": "client-message", "args": ["tv-quit"]},
-        {"event": "property-change", "name": "eof-reached", "data": True},
+        {"event": "end-file", "reason": "eof", "generation": 0},
     ]:
         player._events.put(event)
     player.poll_events()

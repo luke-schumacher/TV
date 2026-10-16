@@ -10,7 +10,7 @@ if [[ $# -gt 0 ]]; then echo "Unknown argument: $1" >&2; exit 2; fi
 command -v mpv >/dev/null || { echo "Install mpv first: brew install mpv (macOS); sudo apt install mpv (Debian/Ubuntu)." >&2; exit 1; }
 python3 -m venv "$ROOT/.venv"
 "$ROOT/.venv/bin/python" -m pip install --upgrade pip
-"$ROOT/.venv/bin/python" -m pip install -e "$ROOT"
+"$ROOT/.venv/bin/python" -m pip install -e "$ROOT[desktop]"
 if [[ ! -e "$ROOT/config.yaml" ]]; then
   cp "$ROOT/config.desktop.example.yaml" "$ROOT/config.yaml"
 fi

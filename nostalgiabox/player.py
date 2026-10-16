@@ -15,6 +15,7 @@ the interesting logic in ``app.py`` never has to know which one it is using.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
@@ -27,12 +28,29 @@ END_ERROR = "error"    # the file failed to play -> skip to next episode
 END_STOPPED = "stopped"  # we stopped it on purpose (channel change) -> ignore
 
 
+@dataclass(frozen=True)
+class PlayerCapabilities:
+    preload: bool = False
+    transitions: bool = False
+    generation_events: bool = False
+    live_appearance: bool = False
+
+
+@dataclass(frozen=True)
+class PlaybackEvent:
+    reason: str
+    generation: int
+
+
 class Player(ABC):
     """Minimal video-player interface used by the application."""
 
     #: Called when playback of the current item finishes. Receives one of the
     #: END_* reason strings. Set by the application before playing anything.
     on_end: Optional[Callable[[str], None]] = None
+    on_playback_event = None
+    generation = 0
+    capabilities = PlayerCapabilities()
 
     @abstractmethod
     def play(self, path: Path, *, start: float = 0.0) -> None:
@@ -194,6 +212,8 @@ def build_mpv_options(
 
 class MpvPlayer(Player):
     """A :class:`Player` backed by libmpv, tuned for a Raspberry Pi + TV."""
+
+    capabilities = PlayerCapabilities(preload=True, transitions=True)
 
     def __init__(
         self,
@@ -430,6 +450,8 @@ class MpvPlayer(Player):
 
 class MockPlayer(Player):
     """A headless stand-in that records commands - for tests and dev mode."""
+
+    capabilities = PlayerCapabilities(preload=True, transitions=True)
 
     def __init__(self, *, verbose: bool = False) -> None:
         self.verbose = verbose

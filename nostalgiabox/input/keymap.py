@@ -23,6 +23,9 @@ from ..actions import Action, InputEvent
 _EVDEV_ACTIONS: Dict[str, InputEvent] = {
     # Channel changing. Dedicated channel keys, page keys, and the D-pad all
     # work so almost any remote can drive it.
+    "KEY_G": InputEvent(Action.GUIDE),
+    "KEY_S": InputEvent(Action.SETTINGS),
+    "KEY_ESC": InputEvent(Action.BACK),
     "KEY_CHANNELUP": InputEvent(Action.CHANNEL_UP),
     "KEY_PAGEUP": InputEvent(Action.CHANNEL_UP),
     "KEY_UP": InputEvent(Action.CHANNEL_UP),
@@ -59,7 +62,7 @@ _EVDEV_ACTIONS: Dict[str, InputEvent] = {
     "KEY_SLEEP": InputEvent(Action.POWER),
     "KEY_P": InputEvent(Action.POWER),
     # Quit the application (mostly for keyboards during setup).
-    "KEY_ESC": InputEvent(Action.QUIT),
+    "KEY_ESC": InputEvent(Action.BACK),
     "KEY_Q": InputEvent(Action.QUIT),
 }
 
@@ -89,6 +92,9 @@ _ACTION_BY_NAME: Dict[str, InputEvent] = {
     "last": InputEvent(Action.LAST_CHANNEL),
     "power": InputEvent(Action.POWER),
     "quit": InputEvent(Action.QUIT),
+    "guide": InputEvent(Action.GUIDE),
+    "settings": InputEvent(Action.SETTINGS),
+    "back": InputEvent(Action.BACK),
     "none": None,  # explicitly unbind a key
 }
 
@@ -143,6 +149,8 @@ _CHAR_TO_KEY: Dict[str, str] = {
     "L": "KEY_LAST",
     "p": "KEY_POWER",
     "P": "KEY_POWER",
+    "g": "KEY_G",
+    "s": "KEY_S",
     "q": "KEY_Q",
     "Q": "KEY_Q",
     "\r": "KEY_ENTER",

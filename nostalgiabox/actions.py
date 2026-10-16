@@ -17,6 +17,9 @@ from typing import Optional
 class Action(Enum):
     """A single high-level intent produced by a remote control."""
 
+    GUIDE = auto()
+    BACK = auto()
+    SETTINGS = auto()
     CHANNEL_UP = auto()
     CHANNEL_DOWN = auto()
     VOLUME_UP = auto()

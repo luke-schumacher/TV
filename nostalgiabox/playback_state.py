@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import math
+from .storage import atomic_write, write_json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -58,6 +60,18 @@ class PlaybackState:
         except (OSError, json.JSONDecodeError):
             log.warning("could not read playback state %s; starting fresh", path)
             return state
+        version = raw.get("version", 0) if isinstance(raw, dict) else -1
+        if type(version) is not int or version not in (0, STATE_VERSION):
+            log.warning("unsupported playback state version %s; leaving it untouched", version)
+            state._read_only = True
+            return state
+        if version == 0:
+            backup = path.with_suffix(path.suffix + '.v0.bak')
+            if not backup.exists():
+                try:
+                    atomic_write(backup, path.read_text(encoding='utf-8'))
+                except OSError:
+                    pass
         channels = raw.get("channels") if isinstance(raw, dict) else None
         if not isinstance(channels, dict):
             return state
@@ -75,8 +89,8 @@ class PlaybackState:
                 epoch_f = None
             state._channels[str(key)] = ChannelBookmark(
                 episode=str(item.get("episode") or ""),
-                position=max(0.0, position),
-                epoch=epoch_f,
+                position=max(0.0, position) if math.isfinite(position) else 0.0,
+                epoch=epoch_f if epoch_f is None or math.isfinite(epoch_f) else None,
             )
         return state
 
@@ -88,6 +102,8 @@ class PlaybackState:
 
     def save(self) -> None:
         """Write the file atomically. A half-written bookmark must not stick."""
+        if getattr(self, "_read_only", False):
+            return
         payload = {
             "version": STATE_VERSION,
             "channels": {
@@ -100,10 +116,7 @@ class PlaybackState:
             },
         }
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-            tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-            tmp.replace(self.path)
+            write_json(self.path, payload)
         except OSError:
             log.warning("could not save playback state %s", self.path, exc_info=True)
 

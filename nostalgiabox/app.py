@@ -28,7 +28,9 @@ from .channel import Channel, ChannelLineup, PlayRequest, build_lineup
 from .config import Config
 from .input.manager import InputManager, create_backends
 from .overlay import OverlayManager
-from .player import END_EOF, END_ERROR, MockPlayer, Player
+from .player import END_EOF, END_ERROR, MockPlayer, Player, PlaybackEvent
+from .profiles import DESKTOP, APPLIANCE
+from .view import ChannelView, ViewingSnapshot
 from .volume import resolve_volume_control
 from .static_gen import (
     COLORBARS_FILENAME,
@@ -52,6 +54,7 @@ class TVApp:
         overlay: Optional[OverlayManager] = None,
         clock: Callable[[], float] = time.monotonic,
         assets_dir: Optional[Path] = None,
+        lineup=None,
     ) -> None:
         self.config = config
         self.player = player
@@ -59,7 +62,7 @@ class TVApp:
         self.overlay = overlay or OverlayManager(player, config, clock=clock)
         self._clock = clock
 
-        self.lineup: ChannelLineup = build_lineup(config)
+        self.lineup: ChannelLineup = lineup or build_lineup(config)
 
         # Runtime state. ``volume`` / ``muted`` are the only Pi level. mpv is
         # told this number at startup and again after every file; it is not
@@ -79,6 +82,13 @@ class TVApp:
         self._playing_path: Optional[Path] = None
         self._last_channel_number: Optional[int] = None
         self._running = False
+        self.hint_visible = False
+        self.guide_open = False
+        self.guide_index = 0
+        self.on_settings = None
+        self.error = None
+        self._failures = 0
+        self._retry_at = None
 
         # Direct channel entry ("type 1 then 2 -> channel 12").
         self._digit_buffer = ""
@@ -97,6 +107,7 @@ class TVApp:
         # Playback-finished events from the player (may arrive on any thread).
         self._ended: "queue.Queue[str]" = queue.Queue()
         self.player.on_end = self._ended.put
+        self.player.on_playback_event = self._ended.put
 
         # Filler assets.
         self._assets_dir = assets_dir or config.assets_dir or DEFAULT_ASSETS_DIR
@@ -116,6 +127,7 @@ class TVApp:
         assets_dir: Optional[Path] = None,
         desktop: bool = False,
         fullscreen: bool = False,
+        lineup=None,
     ) -> "TVApp":
         """Build a fully wired app, creating real hardware backends by default.
 
@@ -123,8 +135,7 @@ class TVApp:
         backends (a stdin backend is added if a TTY is available), which is how
         the box can be exercised on a development machine.
         """
-        if desktop:
-            config = replace(config, power_off_on_min_volume=False, volume_control="pi", bridge_seconds=0)
+        config = (DESKTOP if desktop else APPLIANCE).apply(config)
         if player is None:
             if dry_run:
                 player = MockPlayer(verbose=True)
@@ -133,7 +144,7 @@ class TVApp:
                 from .player import MpvPlayer
 
                 assets = assets_dir or config.assets_dir or DEFAULT_ASSETS_DIR
-                shader_path = write_shader(config.crt)
+                shader_path = write_shader(config.crt) if not config.ui.reduced_motion and config.ui.theme != "modern" else None
                 if desktop:
                     from .desktop import DesktopPlayer
                     factory = DesktopPlayer
@@ -158,7 +169,7 @@ class TVApp:
 
         if desktop and not dry_run:
             player.on_input = input_manager.put
-        return cls(config, player, input_manager, assets_dir=assets_dir)
+        return cls(config, player, input_manager, assets_dir=assets_dir, lineup=lineup)
 
     # -- lifecycle ----------------------------------------------------------
     def start(self) -> None:
@@ -171,10 +182,10 @@ class TVApp:
 
     def run(self) -> None:
         """Run the blocking main loop until a QUIT action is received."""
-        self.start()
         self._running = True
         log.info("NostalgiaBox is on the air. %d channels.", len(self.lineup))
         try:
+            self.start()
             while self._running:
                 self.step(block=True)
         except KeyboardInterrupt:  # pragma: no cover - interactive convenience
@@ -212,6 +223,9 @@ class TVApp:
         self._maybe_commit_switch(now)
         self._maybe_commit_digits(now)
         self._drain_playback_events()
+        if self._retry_at is not None and now >= self._retry_at:
+            self._retry_at = None
+            self._advance_current()
 
         event = self.input.get(timeout=timeout if block else 0.0)
         if event is not None:
@@ -231,7 +245,38 @@ class TVApp:
     # -- input handling -----------------------------------------------------
     def handle_event(self, event: InputEvent) -> None:
         action = event.action
+        if self.hint_visible:
+            self.player.clear_overlay(4)
+            self.hint_visible = False
 
+        if action == Action.SETTINGS:
+            if self.on_settings:
+                self.on_settings()
+            return
+        if action == Action.GUIDE:
+            if self.standby:
+                return
+            self.guide_open = not self.guide_open
+            self.guide_index = self.lineup.index_of(self.lineup.current.number) or 0
+            self._render_guide()
+            return
+        if action == Action.BACK:
+            if self.guide_open:
+                self.guide_open = False
+                self.overlay.clear_guide()
+            else:
+                self._running = False
+            return
+        if self.guide_open and action in (Action.CHANNEL_UP, Action.CHANNEL_DOWN, Action.ENTER):
+            if action == Action.ENTER:
+                number = list(self.lineup)[self.guide_index].number
+                self.guide_open = False
+                self.overlay.clear_guide()
+                self.select_channel_number(number)
+            else:
+                self.guide_index = (self.guide_index + (-1 if action == Action.CHANNEL_UP else 1)) % len(self.lineup)
+                self._render_guide()
+            return
         if action == Action.QUIT:
             self._running = False
             return
@@ -301,6 +346,9 @@ class TVApp:
     def tune_current(self, *, show_static: bool = True) -> None:
         """Tune into the currently selected channel."""
         channel = self.lineup.current
+        self._retry_at = None
+        self._failures = 0
+        self.error = None
         self.overlay.clear_standby()
 
         request = channel.tune_in()
@@ -318,7 +366,7 @@ class TVApp:
             self._switch_deadline = None
             self.overlay.show_channel_bug(channel.number, channel.name)
             self._play_request(request)
-        elif self._transition_path is not None:
+        elif self._transition_path is not None and self.player.capabilities.transitions and not self.config.ui.reduced_motion:
             # Transition clip (glitch/static) + preloaded episode.
             self._switch_deadline = None
             self.overlay.show_channel_bug(channel.number, channel.name)
@@ -330,7 +378,7 @@ class TVApp:
                 static_seconds=self.config.transition_duration,
             )
             self._apply_output_volume()
-        elif self.config.bridge_seconds > 0 and self._playing_path is not None:
+        elif self.config.bridge_seconds > 0 and self._playing_path is not None and self.player.capabilities.preload:
             # No transition effect: keep the current show playing while the next
             # channel preloads, then cut over (no frozen frame). The banner is
             # shown at the cut-over (see _maybe_commit_switch), not right now.
@@ -346,6 +394,7 @@ class TVApp:
     def _play_request(self, request: PlayRequest) -> None:
         self._playing_path = request.path
         self.player.play(request.path, start=request.start)
+        self.overlay.show_episode(request.path.stem)
         self._apply_output_volume()
 
     def _show_no_signal(self, channel: Channel) -> None:
@@ -479,10 +528,57 @@ class TVApp:
     def _show_info(self) -> None:
         channel = self.lineup.current
         self.overlay.show_channel_bug(channel.number, channel.name)
+        if self._playing_path:
+            self.overlay.show_episode(self._playing_path.stem)
+
+    def snapshot(self):
+        rows = []
+        for ch in self.lineup:
+            watching = ch.number == self.lineup.current.number
+            path = self._playing_path if watching else ch._resume_path
+            if path is None and ch.episodes:
+                path = ch.episodes[ch._cursor] if ch.config.order == "in_order" else None
+            position = (self.player.get_time_pos() or 0) if watching else ch._resume_position
+            duration = ch.cached_duration(path) if path else None
+            rows.append(ChannelView(ch.number, ch.name, path.stem if path else "Shuffled episodes" if ch.episodes else "No episodes", position, duration, watching))
+        state = "standby" if self.standby else "guide" if self.guide_open else "error" if self.error else "watching"
+        return ViewingSnapshot(state, tuple(rows), self.guide_index, self.volume, self.muted, self.error)
+
+    def _render_guide(self):
+        if self.guide_open:
+            self.overlay.show_guide(self.snapshot())
+        else:
+            self.overlay.clear_guide()
+
+    def apply_config(self, config, lineup):
+        """Reconcile a completed scan without restarting unchanged playback."""
+        self._remember_position()
+        old = self.lineup.current
+        current_path = old.config.path
+        for fresh in lineup:
+            previous = next((ch for ch in self.lineup if ch.config.path == fresh.config.path), None)
+            if previous:
+                fresh._restore(previous.bookmark())
+                if previous.config.order == "shuffle" and previous._resume_path in fresh.episodes:
+                    fresh.remember(previous._resume_path, previous._resume_position)
+        self.config = DESKTOP.apply(config)
+        self.lineup = lineup
+        target = next((ch for ch in lineup if ch.config.path == current_path), None)
+        self.overlay.clear_all()
+        self.overlay = OverlayManager(self.player, self.config, clock=self._clock)
+        self._transition_path = self._resolve_transition_asset()
+        self.guide_index = 0
+        if target:
+            lineup.select_number(target.number)
+        if target is None or self._playing_path not in lineup.current.episodes:
+            self.tune_current(show_static=False)
+        self._render_guide()
 
     def _toggle_standby(self) -> None:
         self.standby = not self.standby
         if self.standby:
+            self.guide_open = False
+            self._retry_at = None
             self._remember_position()
             self._switch_deadline = None
             self._pending_banner = None
@@ -519,6 +615,20 @@ class TVApp:
                 reason = self._ended.get_nowait()
             except queue.Empty:
                 break
+            if isinstance(reason, PlaybackEvent):
+                if reason.generation != self.player.generation:
+                    continue
+                reason = reason.reason
+            if reason == END_ERROR and not self.standby:
+                self._failures += 1
+                missing = self._playing_path is not None and not self._playing_path.exists()
+                self.error = "Library disconnected or file missing" if missing else "Cannot decode this episode or open video output"
+                self.overlay.show_message(self.error + ". Retrying; S opens settings.", duration=5)
+                self._retry_at = self._clock() + min(30, 2 ** min(self._failures, 5))
+                continue
+            if reason == END_EOF:
+                self._failures = 0
+                self.error = None
             # Coalesce: only advance once even if several events queued up.
             if reason in (END_EOF, END_ERROR) and not advanced and not self.standby:
                 self._advance_current()

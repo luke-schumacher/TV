@@ -19,3 +19,6 @@ nostalgiabox/assets/*.mp4
 # OS cruft
 .DS_Store
 Thumbs.db
+
+# Desktop bundler output
+TV.spec

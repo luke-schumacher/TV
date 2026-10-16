@@ -77,6 +77,10 @@ INORDER_MARKER = ".inorder"
 class UiConfig:
     """Look of the on-screen overlays (the green digital TV readouts)."""
 
+    scale: float = 1.0
+    high_contrast: bool = False
+    reduced_motion: bool = False
+    theme: str = "crt"
     font: str = "VT323"             # bundled retro terminal font (OFL)
     color: str = "#4DFF5A"          # bright CRT phosphor green
     dim_color: str = "#123B18"      # unlit volume segment / dot colour
@@ -418,6 +422,9 @@ def config_from_dict(data: Dict[str, Any], *, base_dir: Optional[Path] = None) -
     if not isinstance(data, dict):
         raise ConfigError("configuration root must be a mapping")
 
+    version = data.get("schema_version", 0)
+    if type(version) is not int or version not in (0, 1):
+        raise ConfigError(f"Unsupported settings schema version: {version}")
     default_order = _global_order(data)
 
     exts = data.get("video_extensions")
@@ -571,8 +578,14 @@ def _parse_ui(raw: Any) -> UiConfig:
         return UiConfig()
     if not isinstance(raw, dict):
         raise ConfigError("'ui' must be a mapping")
+    if raw.get("theme", "crt") not in ("modern", "crt"):
+        raise ConfigError("ui.theme must be modern or crt")
     defaults = UiConfig()
     return UiConfig(
+        scale=_clamp_float(raw.get("scale", 1), 0.75, 1.5, "ui.scale"),
+        high_contrast=bool(raw.get("high_contrast", False)),
+        reduced_motion=bool(raw.get("reduced_motion", False)),
+        theme=str(raw.get("theme", "crt")),
         font=str(raw.get("font", defaults.font)),
         color=_valid_color(raw.get("color", defaults.color), "ui.color"),
         dim_color=_valid_color(raw.get("dim_color", defaults.dim_color), "ui.dim_color"),

@@ -1,6 +1,8 @@
 # TV: UI and architecture proposal
 
-These are proposed follow-up changes, separate from the desktop compatibility implementation. Preserve the immediate, remote-friendly viewing experience: launching TV should put a show on screen, with library management available on demand.
+Implementation status: the 1.1 change delivers setup, ASS guide, modeless Qt settings, accessibility, background library/cache, stable numbering, playback-event generations, retry backoff and atomic versioned settings. See [the implementation record](IMPLEMENTATION_PLAN.md) and [release gates](RELEASE.md). Embedded Qt rendering, signed/notarized releases and Flatpak/AppImage distribution remain future work.
+
+The following is the original design rationale. Preserve the immediate, remote-friendly viewing experience: launching TV should put a show on screen, with library management available on demand.
 
 ## Priority 1 — Make setup visible and recoverable
 

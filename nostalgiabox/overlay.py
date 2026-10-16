@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import time
 from typing import Callable, Dict, Optional
+from dataclasses import replace
 
 from .config import Config, UiConfig
 from .player import Player
@@ -64,6 +65,8 @@ class OverlayManager:
         self._player = player
         self._config = config
         self._ui = config.ui
+        if self._ui.theme == "modern" or self._ui.high_contrast:
+            self._ui = replace(self._ui, font="sans-serif", glow=False, color="#FFFFFF")
         self._clock = clock
         # overlay id -> wall time (monotonic) at which it should disappear.
         self._expiry: Dict[int, float] = {}
@@ -77,6 +80,33 @@ class OverlayManager:
         ass = _channel_bug_ass(number, name, self._ui)
         self._player.set_overlay(_ID_CHANNEL, ass, CANVAS_W, CANVAS_H)
         self._arm(_ID_CHANNEL, dur)
+
+    def show_episode(self, title: str) -> None:
+        ass = rf"{{\an7\pos(220,{round(_IY0+164*self._ui.scale)}){_style(self._ui, size=30)}}}{_escape(title[:int(55/self._ui.scale)])}"
+        self._player.set_overlay(6, ass, CANVAS_W, CANVAS_H)
+        self._arm(6, self._config.channel_bug_seconds)
+
+    def show_guide(self, snapshot) -> None:
+        rows = snapshot.channels
+        start = max(0, min(snapshot.selected - 2, len(rows) - 5))
+        parts = [_filled_rect(x=170, y=50, w=940, h=590, fill="&H00141820"),
+                 rf"{{\an7\pos(210,70){_style(self._ui, size=38)}}}CHANNEL GUIDE"]
+        for offset, row in enumerate(rows[start:start + 5]):
+            selected = start + offset == snapshot.selected
+            y = 135 + offset * 86
+            marker = "> " if selected else "  "
+            watching = "  [Watching]" if row.watching else ""
+            title = f"{marker}{row.number:02d}  {row.name[:int(33/self._ui.scale)]}{watching}"
+            parts.append(rf"{{\an7\pos(210,{y}){_style(self._ui, size=29)}}}{_escape(title)}")
+            detail = row.episode[:int(55/self._ui.scale)] or "No episodes"
+            if row.duration:
+                detail += f"  {min(100, round(row.position / row.duration * 100))}%"
+            parts.append(rf"{{\an7\pos(245,{y+36}){_style(self._ui, size=23)}}}{_escape(detail)}")
+        parts.append(rf"{{\an7\pos(210,590){_style(self._ui, size=23)}}}Up/Down select   Enter watch   Esc back   S settings")
+        self._player.set_overlay(5, "\n".join(parts), CANVAS_W, CANVAS_H)
+
+    def clear_guide(self):
+        self._player.clear_overlay(5)
 
     def show_volume(
         self, level: int, muted: bool, *, duration: Optional[float] = None
@@ -111,7 +141,7 @@ class OverlayManager:
                 self._expiry.pop(overlay_id, None)
 
     def clear_all(self) -> None:
-        for overlay_id in (_ID_CHANNEL, _ID_VOLUME, _ID_STANDBY, _ID_MESSAGE):
+        for overlay_id in (_ID_CHANNEL, _ID_VOLUME, _ID_STANDBY, _ID_MESSAGE, 5, 6):
             self._player.clear_overlay(overlay_id)
         self._expiry.clear()
 
@@ -136,6 +166,7 @@ def _hex_to_ass(hex_color: str, alpha: int = 0) -> str:
 
 def _style(ui: UiConfig, *, size: int, alpha: int = 0) -> str:
     """Common ASS override tags: retro font, green fill, and a soft CRT glow."""
+    size = round(size * ui.scale)
     color = _hex_to_ass(ui.color, alpha)
     tags = rf"\fn{ui.font}\b1\fs{size}\c{color}\1a&H{alpha:02X}&"
     if ui.glow:
@@ -157,7 +188,7 @@ def _channel_bug_ass(number: int, name: str, ui: UiConfig) -> str:
         rf"{{\an9\pos({_IX1},{_IY0}){_style(ui, size=88)}}}CH {num}"
     )
     name_line = (
-        rf"{{\an9\pos({_IX1},{_IY0 + 104}){_style(ui, size=40)}}}{_escape(name)}"
+        rf"{{\an9\pos({_IX1},{_IY0 + round(104 * ui.scale)}){_style(ui, size=40)}}}{_escape(name[:int(40/ui.scale)])}"
     )
     return "\n".join([number_line, name_line])
 
