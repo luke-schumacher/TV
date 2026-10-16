@@ -11,12 +11,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional
+from typing import Optional, Union
 
 
 class Action(Enum):
     """A single high-level intent produced by a remote control."""
 
+    SEARCH = auto()
+    TEXT = auto()
+    BACKSPACE = auto()
+    FULLSCREEN = auto()
     GUIDE = auto()
     BACK = auto()
     SETTINGS = auto()
@@ -43,7 +47,7 @@ class InputEvent:
     """
 
     action: Action
-    value: Optional[int] = None
+    value: Optional[Union[int, str]] = None
 
     @classmethod
     def digit(cls, number: int) -> "InputEvent":

@@ -69,6 +69,7 @@ Focus the TV window first. USB remotes that behave as keyboards work through the
 | M | Mute |
 | I | Channel and episode banner |
 | G | Channel guide |
+| / | Search the guide; type to filter |
 | S | Settings |
 | L | Last channel |
 | P | Standby / wake |
@@ -76,7 +77,7 @@ Focus the TV window first. USB remotes that behave as keyboards work through the
 | Escape | Close guide, or quit when guide is closed |
 | Q, close window | Quit TV |
 
-Press **G** for the channel guide: Up/Down selects, Enter tunes, Escape returns to the current show. **S** opens modeless settings while playback continues. Settings include library/channel forms, exclusions, audio output, Modern/CRT preview, text scale, high contrast, and reduced motion. Cancel restores previews, and validated settings save atomically with a backup of legacy configs.
+Press **G** for the channel guide and **/** to search by channel name, number, or displayed episode. Type to filter, use Up/Down to select, and Enter to tune. Backspace edits; Escape clears search first, then closes the guide. Search ignores case and accents. **S** opens modeless settings while playback continues. Settings include library/channel forms, exclusions, audio output, Modern/CRT preview, text scale, high contrast, and reduced motion. Cancel restores previews, and validated settings save atomically with a backup of legacy configs.
 
 Desktop input is local to the window. Pi `input.key_overrides` apply to evdev only. Desktop switches cut directly to the next show; preloading and static transitions use the base player's immediate fallback. No claim of seamless desktop preloading is made.
 

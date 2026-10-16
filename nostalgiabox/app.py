@@ -31,6 +31,7 @@ from .overlay import OverlayManager
 from .player import END_EOF, END_ERROR, MockPlayer, Player, PlaybackEvent
 from .profiles import DESKTOP, APPLIANCE
 from .view import ChannelView, ViewingSnapshot
+from .guide import filter_channels
 from .volume import resolve_volume_control
 from .static_gen import (
     COLORBARS_FILENAME,
@@ -85,6 +86,8 @@ class TVApp:
         self.hint_visible = False
         self.guide_open = False
         self.guide_index = 0
+        self.guide_query = ""
+        self.guide_searching = False
         self.on_settings = None
         self.error = None
         self._failures = 0
@@ -244,7 +247,42 @@ class TVApp:
 
     # -- input handling -----------------------------------------------------
     def handle_event(self, event: InputEvent) -> None:
+        log.debug("input event: %s", event)
         action = event.action
+        if action == Action.TEXT:
+            char = str(event.value or "")
+            if self.guide_open and self.guide_searching:
+                if char.isprintable() and len(char) == 1 and len(self.guide_query) < 64:
+                    self.guide_query += char
+                    self.guide_index = 0
+                    self._render_guide()
+                return
+            from .input.keymap import stdin_char_to_event
+            if char.casefold() == "f":
+                event = InputEvent(Action.FULLSCREEN)
+            else:
+                event = stdin_char_to_event(char)
+            if event is None:
+                return
+            action = event.action
+        if action == Action.FULLSCREEN:
+            toggle = getattr(self.player, "toggle_fullscreen", None)
+            if toggle:
+                toggle()
+            return
+        if action == Action.SEARCH:
+            if self.standby:
+                return
+            self.guide_open = True
+            self.guide_searching = not self.guide_searching
+            self.guide_index = 0
+            self._render_guide()
+            return
+        if action == Action.BACKSPACE and self.guide_open and self.guide_searching:
+            self.guide_query = self.guide_query[:-1]
+            self.guide_index = 0
+            self._render_guide()
+            return
         if self.hint_visible:
             self.player.clear_overlay(4)
             self.hint_visible = False
@@ -257,24 +295,37 @@ class TVApp:
             if self.standby:
                 return
             self.guide_open = not self.guide_open
+            self.guide_query = ""
+            self.guide_searching = False
             self.guide_index = self.lineup.index_of(self.lineup.current.number) or 0
             self._render_guide()
             return
         if action == Action.BACK:
-            if self.guide_open:
+            if self.guide_open and (self.guide_searching or self.guide_query):
+                self.guide_query = ""
+                self.guide_searching = False
+                self.guide_index = 0
+                self._render_guide()
+            elif self.guide_open:
                 self.guide_open = False
                 self.overlay.clear_guide()
             else:
                 self._running = False
             return
         if self.guide_open and action in (Action.CHANNEL_UP, Action.CHANNEL_DOWN, Action.ENTER):
+            rows = self.snapshot().channels
+            if not rows:
+                return
+            self.guide_index = min(self.guide_index, len(rows) - 1)
             if action == Action.ENTER:
-                number = list(self.lineup)[self.guide_index].number
+                number = rows[self.guide_index].number
                 self.guide_open = False
+                self.guide_searching = False
+                self.guide_query = ""
                 self.overlay.clear_guide()
                 self.select_channel_number(number)
             else:
-                self.guide_index = (self.guide_index + (-1 if action == Action.CHANNEL_UP else 1)) % len(self.lineup)
+                self.guide_index = (self.guide_index + (-1 if action == Action.CHANNEL_UP else 1)) % len(rows)
                 self._render_guide()
             return
         if action == Action.QUIT:
@@ -542,7 +593,10 @@ class TVApp:
             duration = ch.cached_duration(path) if path else None
             rows.append(ChannelView(ch.number, ch.name, path.stem if path else "Shuffled episodes" if ch.episodes else "No episodes", position, duration, watching))
         state = "standby" if self.standby else "guide" if self.guide_open else "error" if self.error else "watching"
-        return ViewingSnapshot(state, tuple(rows), self.guide_index, self.volume, self.muted, self.error)
+        filtered = filter_channels(rows, self.guide_query) if self.guide_open else tuple(rows)
+        selected = min(self.guide_index, max(0, len(filtered) - 1))
+        return ViewingSnapshot(state, filtered, selected, self.volume, self.muted, self.error,
+            self.guide_query, self.guide_searching, len(rows))
 
     def _render_guide(self):
         if self.guide_open:

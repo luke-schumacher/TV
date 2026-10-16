@@ -72,3 +72,18 @@ def test_relative_paths_and_custom_extensions_survive_save(qt, tmp_path, monkeyp
     saved = yaml.safe_load(path.read_text())
     assert saved['channels'][0]['vendor_option'] == 42
     assert saved['channels'][0]['path'] == str(shows / 'Arthur')
+
+
+def test_existing_library_has_visible_startup_before_background_scan(qt, tmp_path, monkeypatch):
+    from concurrent.futures import Future
+    from PySide6.QtCore import QTimer
+    from nostalgiabox.gui import DesktopSession
+    path = tmp_path / 'config.yaml'
+    path.write_text('media_root: /unused\n')
+    session = DesktopSession(path)
+    monkeypatch.setattr(session.service, 'scan', lambda _: Future())
+    QTimer.singleShot(80, qt.quit)
+    session.run()
+    assert session.loading is not None
+    assert session._ticks > 0
+    session.loading.accept()

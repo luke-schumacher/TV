@@ -19,3 +19,6 @@ class ViewingSnapshot:
     volume: int
     muted: bool
     error: Optional[str] = None
+    search_query: str = ""
+    search_active: bool = False
+    total_channels: int = 0

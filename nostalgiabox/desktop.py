@@ -6,6 +6,7 @@ loading Homebrew's libmpv into Python. No global keyboard capture is needed.
 from __future__ import annotations
 
 import json
+import string
 import os
 from collections import deque
 import queue
@@ -25,6 +26,7 @@ WINDOW_KEYS = {
     "UP": "KEY_UP", "DOWN": "KEY_DOWN", "LEFT": "KEY_LEFT", "RIGHT": "KEY_RIGHT",
     "PGUP": "KEY_PAGEUP", "PGDWN": "KEY_PAGEDOWN", "+": "KEY_VOLUMEUP",
     "=": "KEY_VOLUMEUP", "-": "KEY_VOLUMEDOWN", "m": "KEY_M", "i": "KEY_I",
+    "/": "KEY_SLASH", "BS": "KEY_BACKSPACE",
     "g": "KEY_G", "s": "KEY_S",
     "l": "KEY_L", "p": "KEY_P", "q": "KEY_Q", "ESC": "KEY_ESC",
     "ENTER": "KEY_ENTER", **{str(n): f"KEY_{n}" for n in range(10)},
@@ -45,9 +47,17 @@ class DesktopPlayer(Player):
         root = Path(self._temp.name)
         ipc = root / "ipc"
         bindings = root / "input.conf"
-        bindings.write_text("\n".join(
-            f"{key} script-message tv-key {value}" for key, value in WINDOW_KEYS.items()
-        ) + "\nf cycle fullscreen\nCLOSE_WIN script-message tv-quit\n")
+        lines = [f"{key} script-message tv-key {value}" for key, value in WINDOW_KEYS.items()
+                 if len(key) != 1 or key == "/"]
+        # Encode characters as codepoints so input.conf quoting cannot turn
+        # spaces or punctuation into command separators. Shortcuts are resolved
+        # by the app, allowing q/s/f/etc. to be ordinary letters during search.
+        characters = string.ascii_letters + string.digits + " -_+=" + "äöüÄÖÜßéèêëáàâåæçíìîïñóòôøúùûýÿ"
+        for char in characters:
+            key = "SPACE" if char == " " else char
+            lines.append(f"{key} script-message tv-text {ord(char):x}")
+        lines.append("CLOSE_WIN script-message tv-quit")
+        bindings.write_text("\n".join(lines) + "\n")
         args = [binary, "--no-config", "--idle=yes", "--force-window=yes",
                 "--keep-open=no", "--input-default-bindings=no", "--input-terminal=no",
                 "--osc=no", "--terminal=no", "--input-vo-keyboard=yes", "--volume-max=100", "--replaygain=no", "--hwdec=auto-safe",
@@ -132,6 +142,12 @@ class DesktopPlayer(Player):
                     action = evdev_key_to_event(args[1])
                     if action and self.on_input:
                         self.on_input(action)
+                elif args and args[0] == "tv-text" and len(args) > 1 and self.on_input:
+                    try:
+                        char = chr(int(args[1], 16))
+                    except (ValueError, OverflowError):
+                        continue
+                    self.on_input(InputEvent(Action.TEXT, char))
                 elif args and args[0] == "tv-quit" and self.on_input:
                     self.on_input(InputEvent(Action.QUIT))
             elif kind == "shutdown" and self.on_input:
@@ -225,6 +241,9 @@ class DesktopPlayer(Player):
         self._command("set_property", "audio-device", config.audio_device or "auto")
         filters = [{"name": "lavfi", "params": {"graph": "scale=960:720:force_original_aspect_ratio=decrease,pad=960:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"}}] if config.force_4_3 else []
         self._command("set_property", "vf", filters)
+
+    def toggle_fullscreen(self):
+        self._command("cycle", "fullscreen")
 
     def audio_devices(self):
         return self._command("get_property", "audio-device-list") or []

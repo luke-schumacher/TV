@@ -335,6 +335,7 @@ class DesktopSession:
         self.tv = None
         self._shutdown = False
         self.dialog = None
+        self.loading = None
         self.future = None
         self.warming = []
         self.error = None
@@ -345,6 +346,9 @@ class DesktopSession:
         self.timer.timeout.connect(self.tick)
 
     def show_settings(self, *, first_run=False):
+        if self.loading:
+            self.loading.accept()
+            self.loading = None
         if self.dialog and self.dialog.isVisible():
             self.dialog.raise_()
             self.dialog.activateWindow()
@@ -396,6 +400,9 @@ class DesktopSession:
                 self.tv.hint_visible = True
                 self.tv.overlay.show_message('↑↓ channels · ←→ volume · G guide · S settings · F fullscreen', duration=10)
                 write_json(marker, {'version': 1, 'shown': True})
+        if self.loading:
+            self.loading.accept()
+            self.loading = None
         self._signature = self.signature(config, lineup)
         if not self.warming or all(f.done() for f in self.warming):
             self.warming = self.service.warm(lineup)
@@ -444,6 +451,16 @@ class DesktopSession:
         if settings:
             self.show_settings(first_run=not self.path.exists())
         elif self.path.exists():
+            self.loading = QDialog()
+            self.loading.setWindowTitle("TV · Starting")
+            layout = QVBoxLayout(self.loading)
+            layout.addWidget(QLabel("Opening your channels…"))
+            cancel = QPushButton("Cancel")
+            cancel.clicked.connect(self.qt.quit)
+            layout.addWidget(cancel)
+            self.loading.rejected.connect(self.qt.quit)
+            self.loading.resize(380, 130)
+            self.loading.show()
             self.future = self.service.scan(self.path)
         else:
             self.show_settings(first_run=True)

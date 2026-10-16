@@ -23,6 +23,8 @@ from ..actions import Action, InputEvent
 _EVDEV_ACTIONS: Dict[str, InputEvent] = {
     # Channel changing. Dedicated channel keys, page keys, and the D-pad all
     # work so almost any remote can drive it.
+    "KEY_SLASH": InputEvent(Action.SEARCH),
+    "KEY_BACKSPACE": InputEvent(Action.BACKSPACE),
     "KEY_G": InputEvent(Action.GUIDE),
     "KEY_S": InputEvent(Action.SETTINGS),
     "KEY_ESC": InputEvent(Action.BACK),

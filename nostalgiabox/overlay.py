@@ -88,12 +88,18 @@ class OverlayManager:
 
     def show_guide(self, snapshot) -> None:
         rows = snapshot.channels
-        start = max(0, min(snapshot.selected - 2, len(rows) - 5))
+        row_height = max(76, round(60 * self._ui.scale))
+        count = min(5, 380 // row_height)
+        start = max(0, min(snapshot.selected - 2, len(rows) - count))
         parts = [_filled_rect(x=170, y=50, w=940, h=590, fill="&H00141820"),
                  rf"{{\an7\pos(210,70){_style(self._ui, size=38)}}}CHANNEL GUIDE"]
-        for offset, row in enumerate(rows[start:start + 5]):
+        cursor = "_" if snapshot.search_active else ""
+        query = snapshot.search_query or ("Type a name or number" if snapshot.search_active else "/ to search")
+        search = f"Search: {query[:42]}{cursor}    {len(rows)}/{snapshot.total_channels or len(rows)}"
+        parts.append(rf"{{\an7\pos(210,122){_style(self._ui, size=24)}}}{_escape(search)}")
+        for offset, row in enumerate(rows[start:start + count]):
             selected = start + offset == snapshot.selected
-            y = 135 + offset * 86
+            y = 185 + offset * row_height
             marker = "> " if selected else "  "
             watching = "  [Watching]" if row.watching else ""
             title = f"{marker}{row.number:02d}  {row.name[:int(33/self._ui.scale)]}{watching}"
@@ -101,8 +107,11 @@ class OverlayManager:
             detail = row.episode[:int(55/self._ui.scale)] or "No episodes"
             if row.duration:
                 detail += f"  {min(100, round(row.position / row.duration * 100))}%"
-            parts.append(rf"{{\an7\pos(245,{y+36}){_style(self._ui, size=23)}}}{_escape(detail)}")
-        parts.append(rf"{{\an7\pos(210,590){_style(self._ui, size=23)}}}Up/Down select   Enter watch   Esc back   S settings")
+            parts.append(rf"{{\an7\pos(245,{y+round(34*self._ui.scale)}){_style(self._ui, size=23)}}}{_escape(detail)}")
+        if not rows:
+            parts.append(rf"{{\an7\pos(210,235){_style(self._ui, size=29)}}}No channels match. Backspace edits; Esc clears.")
+        help_text = "Type to filter   Up/Down select   Enter watch   Esc clear" if snapshot.search_active else "/ search   Up/Down select   Enter watch   Esc back"
+        parts.append(rf"{{\an7\pos(210,590){_style(self._ui, size=23)}}}{help_text}")
         self._player.set_overlay(5, "\n".join(parts), CANVAS_W, CANVAS_H)
 
     def clear_guide(self):
